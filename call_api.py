@@ -4,20 +4,19 @@ from PIL import Image
 import requests
 from io import BytesIO
 
-MODEL_NAME = "satrat/gameboy-upsample"
-
 def run_inference(
     image_path, 
-    prompt="high quality colorized photograph, natural colors, detailed, full color",
+    prompt="high quality colorized photograph, natural colors, detailed",
     negative_prompt="blurry, low quality",
     num_inference_steps=20,
     cfg_scale=7.5,
 ):
     with open(image_path, "rb") as f:
         input_image = f
+
+        deployment = replicate.deployments.get("satrat/gameboy-upsample")
         
-        output = replicate.run(
-            MODEL_NAME,
+        prediction = deployment.predictions.create(
             input={
                 "image": input_image,
                 "prompt": prompt,
@@ -28,7 +27,8 @@ def run_inference(
             }
         )
     
-    return output
+        prediction.wait()
+        return prediction.output
 
 def download_result(output_url, save_path="output.png"):
     response = requests.get(output_url)
@@ -38,7 +38,7 @@ def download_result(output_url, save_path="output.png"):
     return img
 
 if __name__ == "__main__":
-    result = run_inference(image_path="sara-out.jpg")
+    result = run_inference(image_path="test_png/test_sara1.png")
     print(f"Generated image URL: {result}")
     
     if result:
