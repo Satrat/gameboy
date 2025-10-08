@@ -16,8 +16,8 @@ from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 import pandas as pd
-from test_degrade import GameBoyCameraDegradation
-from process_img_2 import GameBoyCameraConverter
+from degrade_img import GameBoyCameraDegradation
+from gameboy_filter import GameBoyCameraConverter
 
 def degrade_single_image(img_file, severity):
     try:
