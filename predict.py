@@ -44,7 +44,7 @@ class Predictor(BasePredictor):
         
         # Same preprocessing as training
         preprocess = transforms.Compose([
-            transforms.Resize((768, 672), interpolation=transforms.InterpolationMode.NEAREST), # upscale gameboy img to 6x resolution
+            transforms.Resize((672, 768), interpolation=transforms.InterpolationMode.NEAREST), # upscale gameboy img to 6x resolution
             transforms.ToTensor(),
             transforms.Normalize([0.5], [0.5]),  # Normalize to [-1, 1]
         ])
@@ -192,9 +192,9 @@ class Predictor(BasePredictor):
         )
         
         id = str(uuid4())
-        print(f"Saving output of shape {generated_image.shape} to {id}")
         output_path = f"{id}.jpg"
         generated_image_cpu = generated_image.cpu()
         generated_image_cpu = generated_image_cpu.squeeze(0).permute(1, 2, 0).numpy()
-        Image.fromarray(generated_image_cpu.squeeze(0)).save(output_path)
+        print(f"Saving output of shape {generated_image.shape} to {id}")
+        Image.fromarray(generated_image_cpu).save(output_path)
         return Path(output_path)

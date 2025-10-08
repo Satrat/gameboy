@@ -1,9 +1,0 @@
-build:
-  python_version: "3.10.18"
-  python_packages:
-    - "torch==2.8.0"
-    - "torchvision==0.23.0"
-    - "diffusers==0.35.1"
-    - "transformers==4.56.1"
-  gpu: true
-predict: "predict.py:Predictor"
