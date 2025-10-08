@@ -180,16 +180,16 @@ class GameBoyCameraDegradation:
 
             },
             'light': {
-                'noise': 0.05, 'blooming_strength': 0.1,
-                'chroma_strength': 1, 'vignette': 0.1, 'blur': 1, 'compression': 80
+                'noise': 0.0, 'blooming_strength': 0.1,
+                'chroma_strength': 1, 'vignette': 0.0, 'blur': 1, 'compression': 80
             },
             'medium': {
-                'noise': 0.10, 'blooming_strength': 0.15,
-                'chroma_strength': 2, 'vignette': 0.15, 'blur': 3, 'compression': 60
+                'noise': 0.04, 'blooming_strength': 0.15,
+                'chroma_strength': 2, 'vignette': 0.05, 'blur': 3, 'compression': 70
             },
             'heavy': {
-                'noise': 0.15, 'blooming_strength': 0.2,
-                'chroma_strength': 3, 'vignette': 0.2, 'blur': 5, 'compression': 40
+                'noise': 0.07, 'blooming_strength': 0.2,
+                'chroma_strength': 3, 'vignette': 0.1, 'blur': 5, 'compression': 60
             }
         }
         

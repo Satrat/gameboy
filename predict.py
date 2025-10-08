@@ -4,20 +4,19 @@ import torch
 from uuid import uuid4
 from PIL import Image
 import torchvision.transforms as transforms
-import torchvision.utils as vutils
 from diffusers import UNet2DConditionModel, AutoencoderKL, DDPMScheduler
 from transformers import CLIPTextModel, CLIPTokenizer
 
 
 BASE_MODEL_ID = "runwayml/stable-diffusion-v1-5"
-CHECKPOINT_PATH = "./stable-diffusion-v1-5-gameboy-upscaled-3/checkpoint-epoch-2"
+CHECKPOINT_PATH = "./checkpoint-epoch-10"
 
 class Predictor(BasePredictor):
     def setup(self):
         if not os.path.exists(CHECKPOINT_PATH):
             raise ValueError(f"Error: Model checkpoint {CHECKPOINT_PATH} not found!")
         
-        self.device = "cuda"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.vae = AutoencoderKL.from_pretrained(BASE_MODEL_ID, subfolder="vae").to(self.device)
         self.text_encoder = CLIPTextModel.from_pretrained(BASE_MODEL_ID, subfolder="text_encoder").to(self.device)
@@ -31,7 +30,7 @@ class Predictor(BasePredictor):
             low_cpu_mem_usage=False,
             ignore_mismatched_sizes=True,
             use_safetensors=True,
-        ).to("cuda")
+        ).to(self.device)
         
         # Set to eval mode
         self.vae.eval()
@@ -41,16 +40,18 @@ class Predictor(BasePredictor):
     def preprocess_image(self, image_path):
         # Load and convert image
         image = Image.open(image_path).convert("RGB")
+        print(f"Input image shape: {image.size}")
         
         # Same preprocessing as training
         preprocess = transforms.Compose([
-            transforms.Resize((672, 768)), # upscale gameboy img to 6x resolution
+            transforms.Resize((768, 672), interpolation=transforms.InterpolationMode.NEAREST), # upscale gameboy img to 6x resolution
             transforms.ToTensor(),
             transforms.Normalize([0.5], [0.5]),  # Normalize to [-1, 1]
         ])
         
         # Apply transforms and add batch dimension
         image_tensor = preprocess(image).unsqueeze(0).to(self.device)
+        print(f"Input image modified shape: {image_tensor.shape}")
         return image_tensor
 
     def encode_text(self, prompt):
@@ -141,7 +142,8 @@ class Predictor(BasePredictor):
             generated_image = self.vae.decode(sample_latents / self.vae.config.scaling_factor).sample
             
             # Convert to [0, 1] range
-            generated_image = (generated_image / 2 + 0.5).clamp(0, 1)
+            generated_image = ((generated_image + 1) / 2).clamp(0, 1)
+            generated_image = (generated_image * 255).clamp(0, 255).byte()
             
         return generated_image
 
@@ -150,7 +152,7 @@ class Predictor(BasePredictor):
         image: Path = Input(description="Input image"),
         prompt: str = Input(
             description="Text prompt for generation", 
-            default="high quality colorized photograph, natural colors, detailed"
+            default="high quality colorized photograph, natural colors, detailed, full color"
         ),
         negative_prompt: str = Input(
             description="Negative prompt", 
@@ -193,5 +195,6 @@ class Predictor(BasePredictor):
         print(f"Saving output of shape {generated_image.shape} to {id}")
         output_path = f"{id}.jpg"
         generated_image_cpu = generated_image.cpu()
-        vutils.save_image(generated_image_cpu.squeeze(0), output_path)
+        generated_image_cpu = generated_image_cpu.squeeze(0).permute(1, 2, 0).numpy()
+        Image.fromarray(generated_image_cpu.squeeze(0)).save(output_path)
         return Path(output_path)

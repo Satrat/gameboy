@@ -1,4 +1,5 @@
 import os
+import random
 from tqdm.auto import tqdm
 from datasets import load_dataset
 from dataclasses import dataclass
@@ -14,20 +15,20 @@ from diffusers.optimization import get_cosine_schedule_with_warmup
 from transformers import CLIPTextModel, CLIPTokenizer
 
 # config
-device = "cuda:4" if torch.cuda.is_available() else "cpu" 
+device = "cuda:0" if torch.cuda.is_available() else "cpu" 
 DATASET_PATH_HF = "Satrat/gameboy-faces"
-OUTPUT_DIR = "stable-diffusion-v1-5-gameboy-upscaled-3"
+OUTPUT_DIR = "stable-diffusion-v1-5-gameboy-upscaled-8"
 FT_CHECKPOINT = "stable-diffusion-v1-5/stable-diffusion-v1-5"
 
 @dataclass
 class TrainingConfig:
     #image_width: int = 768 #128
     #image_height: int = 762 #112
-    train_batch_size = 8
-    eval_batch_size = 8
-    num_epochs = 8
+    train_batch_size = 16
+    eval_batch_size = 16
+    num_epochs = 12
     gradient_accumulation_steps = 1
-    learning_rate = 5e-6
+    learning_rate = 3e-5
     lr_warmup_steps = 1000
     save_image_epochs = 1
     save_model_epochs = 1
@@ -38,7 +39,7 @@ class TrainingConfig:
     push_to_hub = False
     hub_private_repo = True
     overwrite_output_dir = True
-    seed = 0
+    seed = 42
 
 config = TrainingConfig()
 
@@ -72,7 +73,14 @@ dataset_tr.set_transform(transform)
 dataset_test.set_transform(transform)
 
 test_dataloader = torch.utils.data.DataLoader(dataset_test, batch_size=config.train_batch_size, shuffle=True)
-train_dataloader = torch.utils.data.DataLoader(dataset_tr, batch_size=config.train_batch_size, shuffle=True)
+train_dataloader = torch.utils.data.DataLoader(
+    dataset_tr, 
+    batch_size=config.train_batch_size, 
+    shuffle=True,
+    num_workers=8,
+    pin_memory=True,
+    persistent_workers=True
+)
 
 
 # Initialize model
@@ -144,10 +152,14 @@ lr_scheduler = get_cosine_schedule_with_warmup(
 
 # Mixed precision setup
 if config.mixed_precision == 'bf16':
-    scaler = GradScaler()
     use_amp = True
+    scaler = None  # No scaler needed for bf16
+elif config.mixed_precision == 'fp16':
+    use_amp = True  
+    scaler = GradScaler()
 else:
     use_amp = False
+    scaler = None
 
 # Create output directory
 os.makedirs(config.output_dir, exist_ok=True)
@@ -364,7 +376,10 @@ for epoch in range(config.num_epochs):
         noisy_real_latents = noise_scheduler.add_noise(real_latents, noise, timesteps)
         
         # Get text embeddings with CFG training
-        prompts = [training_prompts[i % len(training_prompts)] for i in range(batch_size)]
+        if batch_size <= len(training_prompts):
+            prompts = random.sample(training_prompts, batch_size)
+        else:
+            prompts = [random.choice(training_prompts) for _ in range(batch_size)]
         text_embeddings = get_text_embeddings(prompts)  # Uses CFG null probability
         unet_input = torch.cat([noisy_real_latents, gb_latents], dim=1)
         
@@ -378,13 +393,15 @@ for epoch in range(config.num_epochs):
             loss = F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
         
         # Backward pass
-        if use_amp:
+        if use_amp and scaler:
+            # fp16 path
             scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(unet.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
-        else:
+        elif use_amp:
+            # bf16 path  
             loss.backward()
             torch.nn.utils.clip_grad_norm_(unet.parameters(), 1.0)
             optimizer.step()

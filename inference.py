@@ -44,7 +44,7 @@ def preprocess_image(image_path, device):
     
     # Same preprocessing as training
     preprocess = transforms.Compose([
-        transforms.Resize((672, 768)), # upscale gameboy img to 6x resolution
+        transforms.Resize((672, 768), interpolation=transforms.InterpolationMode.NEAREST), # upscale gameboy img to 6x resolution
         transforms.ToTensor(),
         transforms.Normalize([0.5], [0.5]),  # Normalize to [-1, 1]
     ])
@@ -88,6 +88,7 @@ def generate_image(
     
     # Preprocess input image
     input_image = preprocess_image(input_image_path, device)
+    input_copy_to_save = input_image.detach().clone() 
     print(f"Input image shape: {input_image.shape}")
     
     with torch.no_grad():
@@ -146,40 +147,29 @@ def generate_image(
         # Decode latents to image
         generated_image = vae.decode(sample_latents / vae.config.scaling_factor).sample
         
-        # Convert to [0, 1] range
-        generated_image = (generated_image / 2 + 0.5).clamp(0, 1)
-        
-    return generated_image
+        # Convert to iunt8
+        generated_image = ((generated_image + 1) / 2).clamp(0, 1)
+        generated_image = (generated_image * 255).clamp(0, 255).byte()
+        input_copy_to_save = ((input_copy_to_save + 1) / 2).clamp(0, 1)
+        input_copy_to_save = (input_copy_to_save * 255).clamp(0, 255).byte()
 
-def save_comparison(input_path, generated_tensor, output_path):
+    return input_copy_to_save, generated_image
+
+def save_comparison(input_path, input_tensor, generated_tensor, output_path):
     # Move generated tensor to CPU for saving
     generated_tensor_cpu = generated_tensor.cpu()
-    
-    # Load and preprocess input for display
-    input_img = Image.open(input_path).convert("RGB")
-    input_transform = transforms.Compose([
-        transforms.ToTensor(),
-    ])
-    input_tensor = input_transform(input_img).unsqueeze(0)  # This is on CPU by default
-    
-    # Resize input to match generated image size if needed
-    if input_tensor.shape != generated_tensor_cpu.shape:
-        input_tensor = torch.nn.functional.interpolate(
-            input_tensor, 
-            size=generated_tensor_cpu.shape[-2:], 
-            mode='bilinear', 
-            align_corners=False
-        )
-    
-    # Create side-by-side comparison (both tensors now on CPU)
-    comparison = torch.cat([input_tensor, generated_tensor_cpu], dim=-1)  # Concatenate horizontally
-    
-    # Save comparison
-    vutils.save_image(comparison.squeeze(0), output_path, padding=10, pad_value=1.0)
-    
-    # Also save just the generated image
-    output_only_path = output_path.replace('.png', '_generated_only.png')
-    vutils.save_image(generated_tensor_cpu.squeeze(0), output_only_path)
+    input_tensor_cpu = input_tensor.cpu()
+    print(generated_tensor.shape, input_tensor_cpu.shape)
+
+
+    generated_tensor_cpu = generated_tensor_cpu.squeeze(0).permute(1, 2, 0).numpy()
+    input_tensor_cpu = input_tensor_cpu.squeeze(0).permute(1, 2, 0).numpy()
+
+
+    Image.fromarray(generated_tensor_cpu).save("inferred_output.jpg")
+    Image.fromarray(input_tensor_cpu).save("inferred_input.jpg")
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Generate images using fine-tuned diffusion model")
@@ -233,7 +223,7 @@ def main():
         if args.negative_prompt:
             print(f"Negative prompt: {args.negative_prompt}")
         
-        generated_image = generate_image(
+        input_image, generated_image = generate_image(
             args.input,
             models,
             prompt=args.prompt,
@@ -245,7 +235,7 @@ def main():
         )
         
         # Save results
-        save_comparison(args.input, generated_image, args.output)
+        save_comparison(args.input, input_image, generated_image, args.output)
         print(f"Results saved to {args.output}")
         print(f"Generated image only saved to {args.output.replace('.png', '_generated_only.png')}")
         
